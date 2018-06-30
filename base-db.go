@@ -1,4 +1,5 @@
 package steppingdb
 
-type redisDB struct {
+type BaseDB interface {
+	Storage
 }

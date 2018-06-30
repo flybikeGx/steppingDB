@@ -10,6 +10,6 @@ type Storage interface {
 	HMKeys(key string) []string
 
 	ArrayGet(key string, i int) Value
-	ArraySet(key string, i int) Value
+	ArraySet(key string, i int, value Value)
 	ArrayLen(key string) int
 }
