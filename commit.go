@@ -1,5 +1,7 @@
 package steppingdb
 
+import "fmt"
+
 type Commit interface {
 	Base() Storage
 	New() Commit
@@ -44,7 +46,16 @@ func (n *CommitImpl) HMGet(key, field string) Value { //
 
 }
 func (n *CommitImpl) HMSet(key, field string, value Value) { // 在patch中写入mapdiff
-	n.patch.HMSet(key, field, value)
+	n.err = checkBase(value)
+	if n.err != nil {
+		return
+	}
+	vb := n.base.HMGet(key, field)
+	v1 := hmDiff(vb, value)
+	v1.k = field
+	v1.v = value
+	n.patch.HMSet(key, field, v1)
+
 }
 func (n *CommitImpl) HMLen(key string) int { // 通过遍历mapdiff来计算最终的len
 	b := n.base.HMLen(key)
@@ -61,13 +72,34 @@ func (n *CommitImpl) ArrayGet(key string, i int) Value {
 	val2 := n.patch.ArrayGet(key, i)
 	return merge(val1, val2)
 }
-func (n *CommitImpl) ArraySet(key string, i int, v Value) {
-	n.patch.ArraySet(key, i, v)
+func (n *CommitImpl) ArraySet(key string, i int, value Value) {
+	n.err = checkBase(value)
+	if n.err != nil {
+		return
+	}
+	if i < 0 || i >= n.ArrayLen(key) {
+		n.err = fmt.Errorf("array length overflow")
+	}
+	n.patch.ArraySet(key, i, &sliceDiff{
+		at: i,
+		v:  value,
+	})
 }
 func (n *CommitImpl) ArrayLen(key string) int {
 	l := n.base.ArrayLen(key)
 	d := n.patch.ArrayLen(key)
 	return l + d
+}
+func (n *CommitImpl) ArrayResize(key string, length int) {
+	if length < 0 {
+		n.err = fmt.Errorf("invalid length")
+	}
+	old := n.base.ArrayLen(key)
+	n.patch.ArraySet(key, -1, &sliceDiff{
+		at: length - old,
+		v:  Resize,
+	})
+
 }
 func (n *CommitImpl) Error() error {
 	return n.err
@@ -75,4 +107,25 @@ func (n *CommitImpl) Error() error {
 func MergeBase(c *CommitImpl) Commit {
 	// ...
 	return c.base.(*CommitImpl)
+}
+
+func hmDiff(vbase, value Value) *mapDiff {
+	switch {
+	case vbase == nil && value != Delete:
+		return &mapDiff{
+			new:    true,
+			delete: false,
+		}
+	case vbase != nil && value == Delete:
+		return &mapDiff{
+			new:    false,
+			delete: true,
+		}
+	default:
+		return &mapDiff{
+			new:    false,
+			delete: false,
+		}
+	}
+
 }

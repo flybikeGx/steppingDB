@@ -6,12 +6,22 @@ import (
 )
 
 type Patch struct {
-	rw   sync.RWMutex
-	data map[string]Value
-	err  error
+	rw        sync.RWMutex
+	data      map[string]Value
+	hmKeys    map[string][]*mapDiff
+	hmLens    map[string]int
+	arrayLens map[string]int
+	err       error
 }
 
 func NewPatch() *Patch {
+	return &Patch{
+		data:      make(map[string]Value),
+		hmKeys:    make(map[string][]*mapDiff),
+		hmLens:    make(map[string]int),
+		arrayLens: make(map[string]int),
+		err:       nil,
+	}
 
 }
 func (p *Patch) Get(key string) Value {
@@ -32,11 +42,6 @@ func (p *Patch) HMGet(key, field string) Value {
 	return diffmap.(map[string]*mapDiff)[field]
 }
 func (p *Patch) HMSet(key, field string, value Value) {
-	p.err = checkBase(value)
-	if p.err != nil {
-		return
-	}
-
 	dv, vok := value.(*mapDiff)
 	if !vok {
 		p.err = fmt.Errorf("hm set not mapdiff: %v", value)
@@ -51,25 +56,19 @@ func (p *Patch) HMSet(key, field string, value Value) {
 		}
 	}
 	p.data[key].(map[string]*mapDiff)[field] = dv
+	p.data[key] = append(p.hmKeys[key], dv)
+	if dv.new {
+		p.hmLens[key] = p.hmLens[key] + 1
+	} else {
+		p.hmLens[key] = p.hmLens[key] - 1
+	}
 
 }
 func (p *Patch) HMLen(key string) int {
-	c := 0
-	for _, v := range p.data[key].(map[string]*mapDiff) {
-		if v.new {
-			c++
-		} else if v.delete {
-			c--
-		}
-	}
-	return c
-
+	return p.hmLens[key]
 }
 func (p *Patch) HMKeys(key string) []*mapDiff {
-	rtn := make([]*mapDiff, 0)
-	for _, v := range p.data[key].(map[string]*mapDiff) {
-		rtn = append(rtn, v)
-	}
+	return p.hmKeys[key]
 }
 func (p *Patch) ArrayGet(key string, i int) Value {
 	arr, ok := p.data[key]
@@ -79,10 +78,6 @@ func (p *Patch) ArrayGet(key string, i int) Value {
 	return arr.(map[int]*sliceDiff)[i]
 }
 func (p *Patch) ArraySet(key string, i int, value Value) {
-	p.err = checkBase(value)
-	if p.err != nil {
-		return
-	}
 
 	dv, vok := value.(*sliceDiff)
 	if !vok {
@@ -97,16 +92,18 @@ func (p *Patch) ArraySet(key string, i int, value Value) {
 			p.data[key] = make(map[int]*sliceDiff)
 		}
 	}
+	if i == -1 {
+		p.arrayLens[key] = dv.at
+		return
+	}
 	p.data[key].(map[int]*sliceDiff)[i] = dv
 }
 func (p *Patch) ArrayLen(key string) int {
-	c := 0
-	for _, v := range p.data[key].(map[string]*sliceDiff) {
-		if v.at == -1 {
-			c++
-		}
+	resize, ok := p.arrayLens[key]
+	if !ok {
+		return 0
 	}
-	return c
+	return resize
 }
 func (p *Patch) Error() error {
 	return p.err

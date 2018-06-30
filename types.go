@@ -9,6 +9,10 @@ type DeleteType int
 
 var Delete *DeleteType
 
+type ResizeType int
+
+var Resize *DeleteType
+
 type mapDiff struct {
 	k      string
 	v      Value

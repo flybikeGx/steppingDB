@@ -12,4 +12,5 @@ type Storage interface {
 	ArrayGet(key string, i int) Value
 	ArraySet(key string, i int, value Value)
 	ArrayLen(key string) int
+	ArrayResize(key string, length int)
 }
